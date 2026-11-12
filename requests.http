@@ -1,0 +1,101 @@
+@host = http://localhost:3000
+
+### 1. Реєстрація нового водія (публічний маршрут)
+# Повторний запуск поверне 409 Conflict - це теж очікувана поведінка.
+POST {{host}}/auth/register
+Content-Type: application/json
+
+{
+  "email": "new.driver@autoparts.local",
+  "password": "Driver12345"
+}
+
+### 2. Вхід водія: accessToken у тілі, refreshToken у HttpOnly cookie
+# @name loginDriver
+POST {{host}}/auth/login
+Content-Type: application/json
+
+{
+  "email": "driver@autoparts.local",
+  "password": "Driver12345"
+}
+
+### 3. Профіль авторизованого користувача
+GET {{host}}/auth/me
+Authorization: Bearer {{loginDriver.response.body.$.accessToken}}
+
+### 4. Публічний перегляд каталогу без токена
+GET {{host}}/auto-parts?page=1&limit=3
+
+### 5. Водій намагається створити запчастину - очікуємо 403
+POST {{host}}/auto-parts
+Authorization: Bearer {{loginDriver.response.body.$.accessToken}}
+Content-Type: application/json
+
+{
+  "title": "Спроба водія",
+  "price": 1500,
+  "oemCode": "DRIVER-DENIED-1",
+  "condition": "NEW",
+  "carModelId": "00000000-0000-0000-0000-000000000000"
+}
+
+### 6. Вхід механіка
+# @name loginMechanic
+POST {{host}}/auth/login
+Content-Type: application/json
+
+{
+  "email": "mechanic@autoparts.local",
+  "password": "Mechanic12345"
+}
+
+### 7. Механік створює довідник моделі авто
+# @name createModel
+POST {{host}}/car-models
+Authorization: Bearer {{loginMechanic.response.body.$.accessToken}}
+Content-Type: application/json
+
+{
+  "name": "Octavia A7",
+  "brand": "Skoda",
+  "yearFrom": 2013,
+  "yearTo": 2020
+}
+
+### 8. Механік створює запчастину - очікуємо 201
+# @name createPart
+POST {{host}}/auto-parts
+Authorization: Bearer {{loginMechanic.response.body.$.accessToken}}
+Content-Type: application/json
+
+{
+  "title": "Паливний фільтр Mann WK 820/2",
+  "price": 780,
+  "oemCode": "WK8202",
+  "condition": "NEW",
+  "carModelId": "{{createModel.response.body.$.id}}",
+  "specificationNames": ["Паливна система"]
+}
+
+### 9. Механік додає код сумісності до створеної запчастини
+POST {{host}}/auto-parts/{{createPart.response.body.$.id}}/compatibility-code
+Authorization: Bearer {{loginMechanic.response.body.$.accessToken}}
+Content-Type: application/json
+
+{
+  "code": "WK8202-OEM",
+  "manufacturer": "Mann-Filter",
+  "isInterchangeable": true,
+  "notes": "Аналог Bosch F026402063"
+}
+
+### 10. Оновлення сесії: cookie надсилається автоматично
+POST {{host}}/auth/refresh
+
+### 11. Вихід: очищення cookie та хешу в базі
+POST {{host}}/auth/logout
+Authorization: Bearer {{loginMechanic.response.body.$.accessToken}}
+
+### 12. Повторне оновлення після виходу - очікуємо 401
+POST {{host}}/auth/refresh
